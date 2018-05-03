@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="input_method_unstable_v2">
+
+  <copyright>
+    Copyright © 2012, 2013 Intel Corporation
+    Copyright © 2015, 2016 Jan Arne Petersen
+    Copyright © 2017, 2018 Red Hat, Inc.
+    Copyright © 2018       Purism SPC
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <interface name="zwp_input_method_context_v2" version="1">
+    <description summary="input method context">
+      Corresponds to a text input on the input method side. An input method context
+      is created on text input activation on the input method side. It allows
+      receiving information about the text input from the application via events.
+      Input method contexts do not keep state after deactivation and should be
+      destroyed after deactivation is handled.
+
+      Text is UTF-8 encoded, indices and lengths are in Unicode code points.
+
+      Serials are used to synchronize the state between the text input and
+      an input method. New serials are sent by the text input in the
+      commit_state request and are used by the input method to indicate
+      the known text input state in events like preedit_string, commit_string,
+      and keysym. The text input can then ignore events from the input method
+      which are based on an outdated state (for example after a reset).
+
+      Warning! The protocol described in this file is experimental and
+      backward incompatible changes may be made. Backward compatible changes
+      may be added together with the corresponding interface version bump.
+      Backward incompatible changes are done by bumping the version number in
+      the protocol and interface names and resetting the interface version.
+      Once the protocol is to be declared stable, the 'z' prefix and the
+      version number in the protocol and interface names are removed and the
+      interface version number is reset.
+    </description>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="get_input_popup_surface">
+      <description summary="create popup surface">
+        Creates a new zwp_input_popup_surface_v2 object wrapping a given
+        surface.
+
+        There should be a maximum of one per zwp_input_method_context_v2 at any
+        given time.
+      </description>
+      <arg name="id" type="new_id" interface="zwp_input_popup_surface_v2"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <request name="commit_string">
+      <description summary="commit string">
+        Send the commit string text for insertion to the application.
+
+        The text to commit could be either just a single character after a key
+        press or the result of some composing (pre-edit).
+
+        Values set with this event are double-buffered. They must be applied
+        and reset to initial on the next zwp_text_input_v3.done event.
+
+        The initial value of text is an empty string.
+      </description>
+      <arg name="text" type="string"/>
+    </request>
+
+    <request name="preedit_string">
+      <description summary="pre-edit string">
+        Send the pre-edit string text to the application text input.
+
+        Place a new composing text (pre-edit) at the current cursor position.
+        Any previously set composing text must be removed. Any previously
+        existing selected text must be removed. The cursor is moved to a new
+        position within the preedit string.
+
+        The parameters cursor_begin and cursor_end are counted in Unicode code
+        points relative to the beginning of the submitted string. Cursor should
+        be hidden when both are equal to -1.
+
+        Cursor_begin indicates the beginning of the cursor. Cursor_end
+        indicates the end of the cursor. It may be equal or different than
+        cursor_begin.
+
+        When cursor_hidden is other than 0, no cursor should be displayed.
+
+        Values set with this event are double-buffered. They must be applied on
+        the next zwp_input_method_context.commit event.
+
+        The initial value of text is an empty string, and cursor_begin,
+        cursor_end and cursor_hidden are all 0.
+      </description>
+      <arg name="text" type="string"/>
+      <arg name="cursor_begin" type="int"/>
+      <arg name="cursor_end" type="int"/>
+    </request>
+
+    <request name="delete_surrounding_text">
+      <description summary="delete text">
+        Remove the surrounding text.
+
+        Before_length and after_length are the number of Unicode code points to
+        delete before and after the current cursor position.
+
+        If a preedit text is present, in effect before_length is counted fom
+        the beginning of it, and after_length from its end (see commit event
+        sequence).
+
+        Values set with this event are double-buffered. They must be applied
+        and reset to initial on the next zwp_input_method_context_v2.commit
+        request.
+
+        The initial values of both before_length and after_length are 0.
+      </description>
+      <arg name="before_length" type="uint"/>
+      <arg name="after_length" type="uint"/>
+    </request>
+
+    <request name="commit">
+      <description summary="apply state">
+        Apply state changes from commit_string, preedit_string and delete_surrounding_text requests.
+
+        The state relating to these events is double-buffered, and each one
+        modifies the pending state. This request replaces the current state
+        with the pending state.
+
+        The text input should proceed by evaluating the changes in the
+        following order:
+
+        1. Replace existing preedit string with the cursor.
+        2. Delete requested surrounding text.
+        3. Insert commit string with the cursor at its end.
+        4. Calculate surrounding text to send.
+        5. Insert new preedit text in cursor position.
+        6. Place cursor inside preedit text.
+      </description>
+    </request>
+
+    <enum name="error">
+      <entry name="grab_conflict" value="0"
+	    summary="tried to have another grab in addition to an exclusive one"/>
+    </enum>
+
+    <request name="grab_keyboard">
+      <description summary="grab hardware keyboard">
+        Allow an input method to receive hardware keyboard input and process
+        key events to generate text events (with pre-edit) over the wire. This
+        allows input methods which compose multiple key events for inputting
+        text like it is done for CJK languages.
+
+        If exclusive is 0, events sent to input method must also be processed
+        normally. Otherwise, they must not be additionally processed.
+
+        If there is an exclusive grab in existence, then there must be no other
+        grab. If servicing a request would break this rule, it will cause a
+        grab_conflict protocol error.
+      </description>
+      <arg name="keyboard" type="new_id" interface="wl_keyboard"/>
+      <arg name="exclusive" type="uint"/>
+    </request>
+
+    <event name="surrounding_text">
+      <description summary="surrounding text event">
+        Sets the surrounding plain text around the input, excluding the preedit
+        text.
+
+        If any preedit text is present, it is replaced with a cursor for the
+        purpose of this event.
+
+        Text is UTF-8 encoded, and should include the cursor position, the
+        complete selection and additional characters before and after them.
+        There is a maximum length of wayland messages, so text can not be
+        longer than 4000 bytes.
+
+        Cursor is the Unicode code point offset of the cursor within text.
+
+        Anchor is the Unicode code point offset of the selection anchor within
+        text. If there is no selected text, anchor is the same as cursor.
+
+        If this request does not arrive before the first done event, the input
+        method may assume that the text input does not support this
+        functionality.
+
+        Values set with this request are double-buffered. They will get applied
+        on the next zwp_input_method_context_v2.done request.
+
+        The initial state for affected fields is empty, meaning that the text
+        input does not support sending surrounding text. If the empty values
+        get applied, subsequent attempts to change them may have no effect.
+      </description>
+      <arg name="text" type="string"/>
+      <arg name="cursor" type="uint"/>
+      <arg name="anchor" type="uint"/>
+    </event>
+
+    <event name="content_type">
+      <description summary="content purpose and hint">
+        Indicates the content type and hint for the current
+        input_method_context instance. The enumerations are defined in
+        text-input-unstable-v3.
+
+        Values set with this request are double-buffered. They will get applied
+        on the first zwp_text_input_v3.commit request after an enable request.
+
+        The input method should ignore any attempt to change them after
+        receiving the first done event.
+
+        The initial value for hint is none, and the initial value for purpose
+        is normal.
+      </description>
+      <arg name="hint" type="content_hint"/>
+      <arg name="purpose" type="content_purpose"/>
+    </event>
+
+    <event name="done">
+      <description summary="apply state">
+        Applies the state resulting from surrounding_text and content_type events.
+
+        Upon receiving this event, the input method must replace the current state with the pending state.
+
+        Serial represents the internal state of the text input, and therefore values within an input-method-context must not repeat.
+      </description>
+      <arg name="serial" type="uint" summary="serial of text input state"/>
+    </event>
+  </interface>
+
+  <interface name="zwp_input_method_v2" version="1">
+    <description summary="input method">
+      An input method object is responsible for composing text in response to
+      input from hardware or virtual keyboards. There is one input method
+      object per seat. On activate there is a new input method context object
+      created which allows the input method to communicate with the text input.
+    </description>
+
+    <event name="activate">
+      <description summary="activate event">
+        A text input was activated. Creates an input method context object
+        which allows communication with the text input.
+      </description>
+      <arg name="id" type="new_id" interface="zwp_input_method_context_v2"/>
+    </event>
+
+    <event name="deactivate">
+      <description summary="deactivate event">
+        The text input corresponding to the context argument was deactivated.
+        The input method context should be destroyed after deactivation is
+        handled.
+      </description>
+      <arg name="context" type="object" interface="zwp_input_method_context_v2"/>
+    </event>
+
+    <request name="destroy" type="destructor"/>
+  </interface>
+
+  <interface name="zwp_input_method_manager_v2" version="1">
+    <description summary="input method manager">
+      The input method manager lets the client create objects listening to text
+      input events on selected seats.
+    </description>
+
+    <request name="get_input_method">
+      <description summary="request an input method object">
+        Request a new input zwp_input_method_v2 object associated with a given
+        seat.
+
+        At most one input method must be associated with any seat at any given
+        time.
+
+        Serial numbers in consecutive calls must be taken from a sequence which
+        doesn't contain repetitions.
+
+        Upon receiving this request, the compositor must respond with either
+        zwp_input_method_manager_v2.new_input_method or
+        zwp_input_method_manager_v2.input_method_unavailable.
+
+        To prevent race conditions, the compositor should err on the side of
+        caution: it must respond with input_method_unavailable when there is
+        already one bound associated with the seat, but it may respond with the
+        same event when none is bound yet.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="seat" type="object" interface="wl_seat"/>
+    </request>
+
+    <event name="new_input_method">
+      <description summary="create an input method object">
+        Create a new input method object assiciated with the given seat.
+
+        This message is a response to get_input_method. The serial number must
+        be one received earlier with get_input_method.
+
+        After issuing the message, the compositor must not use the same serial
+        number with either new_input_method or input_method_unavailable.
+      </description>
+      <arg name="id" type="new_id" interface="zwp_input_method_v2"/>
+      <arg name="serial" type="uint"/>
+    </event>
+
+    <event name="input_method_unavailable">
+      <description summary="refuse to create an input method object">
+        Refuse to create an input method object for a given seat.
+
+        This message is a response to get_input_method. The serial number must
+        be one received earlier with get_input_method.
+
+        After issuing the message, the compositor must not use the same serial
+        number with either new_input_method or input_method_unavailable.
+      </description>
+      <arg name="serial" type="uint"/>
+    </event>
+  </interface>
+
+  <interface name="zwp_input_popup_surface_v2" version="1">
+    <description summary="popup surface">
+      This surface is a popup for interacting with an input method.
+
+      The compositor should place it near the active text input area.
+    </description>
+
+    <event name="text_input_rectangle">
+      <description summary="set text input area position">
+        Notify about the position of the area of the text input expressed as a
+        rectangle in surface local coordinates.
+
+        This is a hint to the input method telling it the relative position of
+        the text being entered.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </event>
+
+    <request name="destroy" type="destructor"/>
+  </interface>
+</protocol>
