@@ -5,7 +5,7 @@
     Copyright © 2012, 2013 Intel Corporation
     Copyright © 2015, 2016 Jan Arne Petersen
     Copyright © 2017, 2018 Red Hat, Inc.
-    Copyright © 2018 Purism SPC
+    Copyright © 2018       Purism SPC
 
     Permission to use, copy, modify, distribute, and sell this
     software and its documentation for any purpose is hereby granted
@@ -108,19 +108,24 @@
 
     <request name="set_surrounding_text">
       <description summary="sets the surrounding text">
-        Sets the surrounding plain text around the input position.
+        Sets the surrounding plain text around the input, excluding the preedit
+        text.
 
-        Text is UTF-8 encoded. Cursor is the Unicode code point offset within
-        the surrounding text.
+        If any preedit text is present, it is replaced with a cursor for the
+        purpose of this event.
+
+        Text is UTF-8 encoded, and should include the cursor position, the
+        complete selection and additional characters before and after them.
+        There is a maximum length of wayland messages, so text can not be
+        longer than 4000 bytes.
+
+        Cursor is the Unicode code point offset of the cursor within text.
+
         Anchor is the Unicode code point offset of the selection anchor within
-        the surrounding text. If there is no selected text, anchor is the same
-        as cursor.
+        text. If there is no selected text, anchor is the same as cursor.
 
         If the client is unaware of the text around the cursor, it should not
         issue this request, to signify lack of support to the compositor.
-
-        There is a maximum length of wayland messages so text can not be
-        longer than 4000 bytes.
 
         Values set with this request are double-buffered. They will get applied
         on the next zwp_text_input_v3.commit request, and stay valid until the
@@ -184,7 +189,7 @@
         of the behavior.
 
         Values set with this request are double-buffered. They will get applied
-        on the first zwp_text_input_v3.commit request after an enabl request.
+        on the first zwp_text_input_v3.commit request after an enable request.
         Subsequent attempts to update them may have no effect. The values
         remain valid until the next enable or disable request.
 
@@ -233,7 +238,7 @@
         all pending state, replacing the current state. After commit, the new
         pending state is as documented for each related request.
 
-        The enable request performs a special role by indicating that the state
+        The enable request plays a special role by indicating that the state
         should be reset and updated with new values on the nearest commit.
 
         The current or pending state are not modified unless noted otherwise.
@@ -267,23 +272,23 @@
 
     <event name="preedit_string">
       <description summary="pre-edit">
-        Notify when a new composing text (pre-edit) should be set around the
-        current cursor position. Any previously set composing text should
-        be removed.
+        Notify when a new composing text (pre-edit) should be set at the
+        current cursor position. Any previously set composing text must be
+        removed. Any previously existing selected text must be removed.
+
+        The parameters cursor_begin and cursor_end are counted in Unicode code
+        points relative to the beginning of the submitted string. Cursor should
+        be hidden when both are equal to -1.
+
+        They could be represented by the client as a line if both values are the
+        same, or as a text highlight otherwise.
 
         Values set with this event are double-buffered. They must be applied on
         the next zwp_text_input_v3.done event, and stay valid until the
         next enable or disable request.
 
-        The parameters cursor_begin and cursor_end are counted in Unicode
-        code points relative to the beginning of the submitted string. Cursor
-        should be hidden when both are equal to -1.
-
-        They could be represented by the cient as a line if both values are the
-        same, or as a text highligt otherwise.
-
-        The initial value of text is an empty string, and cursor_begin and
-        cursor_end are both 0.
+        The initial value of text is an empty string, and cursor_begin,
+        cursor_end and cursor_hidden are all 0.
       </description>
       <arg name="text" type="string" allow-null="true"/>
       <arg name="cursor_begin" type="int"/>
@@ -307,9 +312,14 @@
     <event name="delete_surrounding_text">
       <description summary="delete surrounding text">
         Notify when the text around the current cursor position should be
-        deleted. Before_length and after_length are the number of Unicode
-        code points before and after the current cursor position (excluding the
-        selection) to delete.
+        deleted.
+
+        Before_length and after_length are the number of Unicode code points to
+        delete before and after the current cursor position.
+
+        If a preedit text is present, in effect before_length is counted fom
+        the beginning of it, and after_length from its end (see done event
+        sequence).
 
         Values set with this event are double-buffered. They must be applied
         and reset to initial on the next zwp_text_input_v3.done event.
@@ -323,7 +333,7 @@
     <event name="done">
       <description summary="apply changes">
         Instruct the application to apply changes to state requested by the
-        preedit_string, commit_string and delete_surrounding_string events. The
+        preedit_string, commit_string and delete_surrounding_text events. The
         state relating to these events is double-buffered, and each one
         modifies the pending state. This event replaces the current state with
         the pending state.
@@ -334,8 +344,9 @@
         1. Replace existing preedit string with the cursor.
         2. Delete requested surrounding text.
         3. Insert commit string with the cursor at its end.
-        4. Insert new preedit text in cursor position.
-        5. Place cursor inside preedit text.
+        4. Calculate surrounding text to send.
+        5. Insert new preedit text in cursor position.
+        6. Place cursor inside preedit text.
       </description>
     </event>
   </interface>
